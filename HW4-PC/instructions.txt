@@ -1,0 +1,17 @@
+1. Update bash startup script(.bashrc) with the following, if missing.
+	PATH=$PATH:"/usr/local/spark/bin"
+	
+2. Quick check on spark: Launch the shell with spark-shell
+ 
+3. Build the spark code( Currently only building for local, there seems to be a mismatch between scala version being
+   used for the build and the scala version the spark has been compiled with. Waiting for Sitakanta's reply.
+   Will update...)
+
+4. build the code using maven
+   mvn clean
+   mvn package
+
+5. Execute the spark program(standalone mode):
+   Currently executing a simple wordcount program
+   spark-submit --class cs455.spark.startup.StartUp ./target/HW4-PC-1.0.jar <Input HDFS filename> <output HDFS path>
+
