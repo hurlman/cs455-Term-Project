@@ -6,9 +6,9 @@ import java.io._
 //This is a temprary demo content. Will deprecate it as new stuff gets added
 class WordCount() 
 {
-   def Execute(inputfile:String, outputpath:String) 
+   def Execute(mode:String, inputfile:String, outputpath:String) 
    {
-      val conf = new SparkConf().setAppName("hw4-assignment");
+      val conf = new SparkConf().setAppName("hw4-assignment").setMaster(mode);
       val sc = new SparkContext(conf);
       val input = sc.textFile(inputfile);
       val words = input.flatMap(line => line.split(" "));
