@@ -3,6 +3,7 @@ import cs455.spark.wordcount.WordCount
 import cs455.spark.employment.TotalEmploymentAnalyzer
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
 
 //Main program entry.
 object StartUp 
