@@ -21,3 +21,5 @@
    Submit Job using the following command.(There are warnings , we need to probably resolve later. But I am hoping to start some basic task with it)
    "spark-submit --master yarn --class cs455.spark.startup.StartUp ./target/HW4-PC-1.0.jar yarn <Input HDFS path> <output HDFS path>"
 
+7. Data directory
+    hdfs:/Input HDFS path/employment_data
