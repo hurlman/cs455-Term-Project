@@ -1,4 +1,5 @@
 package housing
+import cs455.spark.util.Util._
 import org.apache.spark.sql._
 
 class HousingPriceAnalyzer extends java.io.Serializable {
@@ -65,6 +66,9 @@ class HousingPriceAnalyzer extends java.io.Serializable {
       .filter(_._2.size == 8)
       .map(x => x._1 -> x._2.toIndexedSeq)
 
+    val yearlyRegionGrowth = yearlyRegionPrices
+      .map(x => x._1 -> CalculateGrowth(x._2))
+
     val cumulativePriceDiffByRegion = yearlyRegionPrices
       .map(x =>
         x._1 -> (((x._2(7) - x._2(0)) / x._2(0).toDouble) * 100))
@@ -75,12 +79,18 @@ class HousingPriceAnalyzer extends java.io.Serializable {
     val bot = bottomFive.map(_._1)
     val top = topFive.map(_._1)
 
-    val botYearly = yearlyRegionPrices.filter(x => bot.contains(x._1))
-    val topYearly = yearlyRegionPrices.filter(x => top.contains(x._1))
+    val botYearlyTotals = yearlyRegionPrices.filter(x => bot.contains(x._1))
+    val topYearlyTotals = yearlyRegionPrices.filter(x => top.contains(x._1))
+
+    val botYearlyGrowth = yearlyRegionGrowth.filter(x=> bot.contains(x._1))
+    val topYearlyGrowth = yearlyRegionGrowth.filter(x => top.contains(x._1))
 
     spark.sparkContext.parallelize(bottomFive).saveAsTextFile(output_path + "/housing/botFiveCumulative")
     spark.sparkContext.parallelize(topFive).saveAsTextFile(output_path + "/housing/topFiveCumulative")
-    botYearly.saveAsTextFile(output_path + "/housing/botFiveYearly")
-    topYearly.saveAsTextFile(output_path + "/housing/topFiveYearly")
+    botYearlyTotals.saveAsTextFile(output_path + "/housing/botFiveYearlyTotals")
+    topYearlyTotals.saveAsTextFile(output_path + "/housing/topFiveYearlyTotals")
+    botYearlyGrowth.saveAsTextFile(output_path + "/housing/botFiveYearlyGrowth")
+    topYearlyGrowth.saveAsTextFile(output_path + "/housing/topFiveYearlyGrowth")
+
   }
 }
