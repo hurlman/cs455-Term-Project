@@ -11,9 +11,14 @@ class HousingPriceAnalyzer extends java.io.Serializable {
       .option("header", "true")
       .load(input_path + "/Metro_time_series.csv")
 
-    houseFile.createOrReplaceTempView("houses")
+    val regionFile = spark.read.format("csv")
+      .option("header", "true")
+      .load(input_path + "/CountyCrossWalk_Zillow.csv")
 
-    val result: DataFrame = spark.sql(
+    houseFile.createOrReplaceTempView("houses")
+    regionFile.createOrReplaceTempView("regions")
+
+    val housingPriceQuery = spark.sql(
       """
         |SELECT
         |   Date, RegionName, ZHVI_SingleFamilyResidence
@@ -28,27 +33,45 @@ class HousingPriceAnalyzer extends java.io.Serializable {
         |   OR Date LIKE '%2016%'
         |   OR Date LIKE '%2017%')
       """.stripMargin)
+    housingPriceQuery.createOrReplaceTempView("housingPrice")
 
-    val filteredResult = result.filter(
-      $"Date".isNotNull &&
-        $"RegionName".isNotNull &&
+    val regionsQuery = spark.sql(
+      """
+        |SELECT DISTINCT
+        |   CBSACode, CBSAName
+        |  FROM regions
+      """.stripMargin)
+    regionsQuery.createOrReplaceTempView("regionIDs")
+
+    val housingPrices = spark.sql(
+      """
+        |SELECT
+        |   regionIDs.CBSAName, housingPrice.ZHVI_SingleFamilyResidence
+        |  FROM housingPrice
+        |  LEFT JOIN regionIDs
+        |  ON housingPrice.RegionName=regionIDs.CBSACode
+      """.stripMargin
+    )
+
+    val filteredHousingPrice = housingPrices.filter(
+        $"CBSAName".isNotNull &&
         $"ZHVI_SingleFamilyResidence".isNotNull)
 
-    val kvp = filteredResult.rdd.map {
-      case Row(date: String, region: String, price: String) =>
+    val sortedRegionPrice = filteredHousingPrice.rdd.map {
+      case Row(region: String, price: String) =>
         region -> price.toInt
     }
 
-    val yearlyMetro = kvp
+    val yearlyRegionPrices = sortedRegionPrice
       .groupByKey()
       .filter(_._2.size == 8)
       .map(x => x._1 -> x._2.toIndexedSeq)
 
-    val cumulativePriceDiff = yearlyMetro
+    val cumulativePriceDiffByRegion = yearlyRegionPrices
       .map(x =>
-        x._1 -> (((x._2(7) - x._2(0))/x._2(0).toDouble)*100))
+        x._1 -> (((x._2(7) - x._2(0)) / x._2(0).toDouble) * 100))
 
-    val bottomFive = cumulativePriceDiff.takeOrdered(5)(Ordering[Double].on(_._2))
-    val topFive = cumulativePriceDiff.takeOrdered(5)(Ordering[Double].reverse.on(_._2))
+    val bottomFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].on(_._2))
+    val topFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].reverse.on(_._2))
   }
 }
