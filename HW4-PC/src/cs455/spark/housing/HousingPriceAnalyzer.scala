@@ -1,17 +1,10 @@
 package housing
 
-import org.apache.spark.SparkContext
 import org.apache.spark.sql._
 
 class HousingPriceAnalyzer extends java.io.Serializable {
 
-  def Execute(sc: SparkContext, input_path: String, output_path: String): Unit = {
-    val spark = SparkSession.builder()
-      .master("local")
-      .appName("Housing File Reader")
-      .getOrCreate()
-
-    import spark.implicits._
+  def Execute(spark: SparkSession, input_path: String, output_path: String): Unit = {
     import spark.sqlContext.implicits._
 
     val houseFile = spark.read.format("csv")
