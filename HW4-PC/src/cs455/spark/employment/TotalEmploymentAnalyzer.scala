@@ -121,11 +121,12 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
         // area2yearWiseJobCountGroupByList: org.apache.spark.rdd.RDD[(Int, List[(Int, Float)])]  
         val area2yearWiseJobCountGroupByList = area2yearWiseJobCount.map( xx => (xx._1 , xx._2.toList));
 
-        // Next we will compute average and based on the average we will take top or bottom N area.
-        val area2sortedyearWiseJobCountAndCumulative  = area2yearWiseJobCountGroupByList.map(xx => (xx._1, xx._2, xx._2.map(yy=> yy._2)))
-        val area2sortedyearWiseJobCountAndCumulativeAvg  = area2sortedyearWiseJobCountAndCumulative.map(xx => (xx._1, xx._2, xx._3.sum/xx._3.size))
-        val bottomNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeAvg.sortBy(_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
-        val topNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeAvg.sortBy(-_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
+        // Next we will compute cumulative growth. Sort by year first.
+        // area2sortedyearWiseJobCount: org.apache.spark.rdd.RDD[(Int, List[(Int, Float)])]
+        val area2sortedyearWiseJobCount = area2yearWiseJobCountGroupByList.map( xx => (xx._1 , xx._2.sortBy(_._1)));
+        val area2sortedyearWiseJobCountAndCumulativeGrowth  = area2sortedyearWiseJobCount.map(xx => (xx._1, xx._2, (xx._2.last._2 - xx._2.head._2)*100/xx._2.head._2))
+        val bottomNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeGrowth.sortBy(_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
+        val topNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeGrowth.sortBy(-_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
 
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
