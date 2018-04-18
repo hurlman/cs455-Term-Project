@@ -1,0 +1,96 @@
+package housing
+import cs455.spark.util.Util._
+import org.apache.spark.sql._
+
+class HousingPriceAnalyzer extends java.io.Serializable {
+
+  def Execute(spark: SparkSession, input_path: String, output_path: String): Unit = {
+    import spark.sqlContext.implicits._
+
+    val houseFile = spark.read.format("csv")
+      .option("header", "true")
+      .load(input_path + "/Metro_time_series.csv")
+
+    val regionFile = spark.read.format("csv")
+      .option("header", "true")
+      .load(input_path + "/CountyCrossWalk_Zillow.csv")
+
+    houseFile.createOrReplaceTempView("houses")
+    regionFile.createOrReplaceTempView("regions")
+
+    val housingPriceQuery = spark.sql(
+      """
+        |SELECT
+        |   Date, RegionName, ZHVI_SingleFamilyResidence
+        | FROM houses
+        | WHERE Date LIKE '%-06-30%'
+        |   AND (Date LIKE '%2010%'
+        |   OR Date LIKE '%2011%'
+        |   OR Date LIKE '%2012%'
+        |   OR Date LIKE '%2013%'
+        |   OR Date LIKE '%2014%'
+        |   OR Date LIKE '%2015%'
+        |   OR Date LIKE '%2016%'
+        |   OR Date LIKE '%2017%')
+      """.stripMargin)
+    housingPriceQuery.createOrReplaceTempView("housingPrice")
+
+    val regionsQuery = spark.sql(
+      """
+        |SELECT DISTINCT
+        |   CBSACode, CBSAName
+        |  FROM regions
+      """.stripMargin)
+    regionsQuery.createOrReplaceTempView("regionIDs")
+
+    val housingPrices = spark.sql(
+      """
+        |SELECT
+        |   regionIDs.CBSAName, housingPrice.ZHVI_SingleFamilyResidence
+        |  FROM housingPrice
+        |  LEFT JOIN regionIDs
+        |  ON housingPrice.RegionName=regionIDs.CBSACode
+      """.stripMargin)
+
+    val filteredHousingPrice = housingPrices.filter(
+        $"CBSAName".isNotNull &&
+        $"ZHVI_SingleFamilyResidence".isNotNull)
+
+    val sortedRegionPrice = filteredHousingPrice.rdd.map {
+      case Row(region: String, price: String) =>
+        region -> price.toInt
+    }
+
+    val yearlyRegionPrices = sortedRegionPrice
+      .groupByKey()
+      .filter(_._2.size == 8)
+      .map(x => x._1 -> x._2.toIndexedSeq)
+
+    val yearlyRegionGrowth = yearlyRegionPrices
+      .map(x => x._1 -> CalculateGrowth(x._2))
+
+    val cumulativePriceDiffByRegion = yearlyRegionPrices
+      .map(x =>
+        x._1 -> (((x._2(7) - x._2(0)) / x._2(0).toDouble) * 100))
+
+    val bottomFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].on(_._2))
+    val topFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].reverse.on(_._2))
+
+    val bot = bottomFive.map(_._1)
+    val top = topFive.map(_._1)
+
+    val botYearlyTotals = yearlyRegionPrices.filter(x => bot.contains(x._1))
+    val topYearlyTotals = yearlyRegionPrices.filter(x => top.contains(x._1))
+
+    val botYearlyGrowth = yearlyRegionGrowth.filter(x=> bot.contains(x._1))
+    val topYearlyGrowth = yearlyRegionGrowth.filter(x => top.contains(x._1))
+
+    spark.sparkContext.parallelize(bottomFive).saveAsTextFile(output_path + "/housing/botFiveCumulative")
+    spark.sparkContext.parallelize(topFive).saveAsTextFile(output_path + "/housing/topFiveCumulative")
+    botYearlyTotals.saveAsTextFile(output_path + "/housing/botFiveYearlyTotals")
+    topYearlyTotals.saveAsTextFile(output_path + "/housing/topFiveYearlyTotals")
+    botYearlyGrowth.saveAsTextFile(output_path + "/housing/botFiveYearlyGrowth")
+    topYearlyGrowth.saveAsTextFile(output_path + "/housing/topFiveYearlyGrowth")
+
+  }
+}
