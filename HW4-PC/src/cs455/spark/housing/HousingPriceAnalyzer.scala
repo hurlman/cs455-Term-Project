@@ -1,5 +1,4 @@
 package housing
-
 import org.apache.spark.sql._
 
 class HousingPriceAnalyzer extends java.io.Serializable {
@@ -50,8 +49,7 @@ class HousingPriceAnalyzer extends java.io.Serializable {
         |  FROM housingPrice
         |  LEFT JOIN regionIDs
         |  ON housingPrice.RegionName=regionIDs.CBSACode
-      """.stripMargin
-    )
+      """.stripMargin)
 
     val filteredHousingPrice = housingPrices.filter(
         $"CBSAName".isNotNull &&
@@ -73,5 +71,16 @@ class HousingPriceAnalyzer extends java.io.Serializable {
 
     val bottomFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].on(_._2))
     val topFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].reverse.on(_._2))
+
+    val bot = bottomFive.map(_._1)
+    val top = topFive.map(_._1)
+
+    val botYearly = yearlyRegionPrices.filter(x => bot.contains(x._1))
+    val topYearly = yearlyRegionPrices.filter(x => top.contains(x._1))
+
+    spark.sparkContext.parallelize(bottomFive).saveAsTextFile(output_path + "/housing/botFiveCumulative")
+    spark.sparkContext.parallelize(topFive).saveAsTextFile(output_path + "/housing/topFiveCumulative")
+    botYearly.saveAsTextFile(output_path + "/housing/botFiveYearly")
+    topYearly.saveAsTextFile(output_path + "/housing/topFiveYearly")
   }
 }
