@@ -87,12 +87,24 @@ class HousingPriceAnalyzer extends java.io.Serializable {
     val botYearlyGrowth = yearlyRegionGrowth.filter(x => bot.contains(x._1))
     val topYearlyGrowth = yearlyRegionGrowth.filter(x => top.contains(x._1))
 
-    spark.sparkContext.parallelize(bottomFive).saveAsTextFile(output_path + "/housing/botFiveCumulative")
-    spark.sparkContext.parallelize(topFive).saveAsTextFile(output_path + "/housing/topFiveCumulative")
-    botYearlyTotals.coalesce(1).saveAsTextFile(output_path + "/housing/botFiveYearlyTotals")
-    topYearlyTotals.coalesce(1).saveAsTextFile(output_path + "/housing/topFiveYearlyTotals")
-    botYearlyGrowth.coalesce(1).saveAsTextFile(output_path + "/housing/botFiveYearlyGrowth")
-    topYearlyGrowth.coalesce(1).saveAsTextFile(output_path + "/housing/topFiveYearlyGrowth")
+    spark.sparkContext.parallelize(bottomFive)
+      .coalesce(1)
+      .saveAsTextFile(output_path + "/housing/botFiveCumulative")
+    spark.sparkContext.parallelize(topFive)
+      .coalesce(1)
+      .saveAsTextFile(output_path + "/housing/topFiveCumulative")
+    botYearlyTotals
+      .coalesce(1)
+      .saveAsTextFile(output_path + "/housing/botFiveYearlyTotals")
+    topYearlyTotals
+      .coalesce(1)
+      .saveAsTextFile(output_path + "/housing/topFiveYearlyTotals")
+    botYearlyGrowth
+      .coalesce(1)
+      .saveAsTextFile(output_path + "/housing/botFiveYearlyGrowth")
+    topYearlyGrowth
+      .coalesce(1)
+      .saveAsTextFile(output_path + "/housing/topFiveYearlyGrowth")
 
   }
 }

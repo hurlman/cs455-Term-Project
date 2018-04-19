@@ -19,7 +19,7 @@ object StartUp
 
      //println("Word Count program");
     // new TotalEmploymentAnalyzer().Execute(sc, (args(1) + "/employment_data"), args(2))
-    new HousingPriceAnalyzer().Execute(ss, (args(1) + "/housing_data"), args(2))
-    new PopulationAnalyzer().Execute(ss, (args(1) + "/population_data"), args(2))
+    new HousingPriceAnalyzer().Execute(ss, args(1) + "/housing_data", args(2))
+    new PopulationAnalyzer().Execute(ss, args(1) + "/population_data", args(2))
   }
 }
