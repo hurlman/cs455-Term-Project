@@ -1,4 +1,4 @@
-package housing
+package cs455.spark.housing
 
 import cs455.spark.util.Util._
 import org.apache.spark.sql._

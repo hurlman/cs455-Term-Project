@@ -1,4 +1,4 @@
-package population
+package cs455.spark.population
 
 import org.apache.spark.sql._
 import cs455.spark.util.Util._
