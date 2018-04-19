@@ -1,4 +1,5 @@
 package housing
+
 import cs455.spark.util.Util._
 import org.apache.spark.sql._
 
@@ -46,19 +47,20 @@ class HousingPriceAnalyzer extends java.io.Serializable {
     val housingPrices = spark.sql(
       """
         |SELECT
-        |   regionIDs.CBSAName, housingPrice.ZHVI_SingleFamilyResidence
+        |   regionIDs.CBSAName, housingPrice.RegionName, housingPrice.ZHVI_SingleFamilyResidence
         |  FROM housingPrice
         |  LEFT JOIN regionIDs
         |  ON housingPrice.RegionName=regionIDs.CBSACode
       """.stripMargin)
 
     val filteredHousingPrice = housingPrices.filter(
-        $"CBSAName".isNotNull &&
+      $"CBSAName".isNotNull &&
+        $"RegionName".isNotNull &&
         $"ZHVI_SingleFamilyResidence".isNotNull)
 
     val sortedRegionPrice = filteredHousingPrice.rdd.map {
-      case Row(region: String, price: String) =>
-        region -> price.toInt
+      case Row(regionName: String, regionID: String, price: String) =>
+        s"$regionName($regionID)" -> price.toInt
     }
 
     val yearlyRegionPrices = sortedRegionPrice
@@ -82,15 +84,15 @@ class HousingPriceAnalyzer extends java.io.Serializable {
     val botYearlyTotals = yearlyRegionPrices.filter(x => bot.contains(x._1))
     val topYearlyTotals = yearlyRegionPrices.filter(x => top.contains(x._1))
 
-    val botYearlyGrowth = yearlyRegionGrowth.filter(x=> bot.contains(x._1))
+    val botYearlyGrowth = yearlyRegionGrowth.filter(x => bot.contains(x._1))
     val topYearlyGrowth = yearlyRegionGrowth.filter(x => top.contains(x._1))
 
     spark.sparkContext.parallelize(bottomFive).saveAsTextFile(output_path + "/housing/botFiveCumulative")
     spark.sparkContext.parallelize(topFive).saveAsTextFile(output_path + "/housing/topFiveCumulative")
-    botYearlyTotals.saveAsTextFile(output_path + "/housing/botFiveYearlyTotals")
-    topYearlyTotals.saveAsTextFile(output_path + "/housing/topFiveYearlyTotals")
-    botYearlyGrowth.saveAsTextFile(output_path + "/housing/botFiveYearlyGrowth")
-    topYearlyGrowth.saveAsTextFile(output_path + "/housing/topFiveYearlyGrowth")
+    botYearlyTotals.coalesce(1).saveAsTextFile(output_path + "/housing/botFiveYearlyTotals")
+    topYearlyTotals.coalesce(1).saveAsTextFile(output_path + "/housing/topFiveYearlyTotals")
+    botYearlyGrowth.coalesce(1).saveAsTextFile(output_path + "/housing/botFiveYearlyGrowth")
+    topYearlyGrowth.coalesce(1).saveAsTextFile(output_path + "/housing/topFiveYearlyGrowth")
 
   }
 }
