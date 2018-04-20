@@ -5,7 +5,7 @@ import org.apache.spark.sql._
 
 class HousingPriceAnalyzer extends java.io.Serializable {
 
-  def Execute(spark: SparkSession, input_path: String, output_path: String): Unit = {
+  def Execute(spark: SparkSession, input_path: String, output_path: String, inputFile: Boolean): Unit = {
     import spark.sqlContext.implicits._
 
     val houseFile = spark.read.format("csv")
@@ -71,40 +71,57 @@ class HousingPriceAnalyzer extends java.io.Serializable {
     val yearlyRegionGrowth = yearlyRegionPrices
       .map(x => x._1 -> CalculateGrowth(x._2))
 
-    val cumulativePriceDiffByRegion = yearlyRegionPrices
-      .map(x =>
-        x._1 -> (((x._2(7) - x._2(0)) / x._2(0).toDouble) * 100))
+    if (inputFile) {
+      val sel = spark.sparkContext.textFile(input_path.
+        replace("/housing_data","/selective_area.txt")).collect()
 
-    val bottomFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].on(_._2))
-    val topFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].reverse.on(_._2))
+      val p = """(?<=\()[^)]+(?=\))""".r
+      val selGrowth = yearlyRegionGrowth.filter(x => sel.contains(p.findFirstIn(x._1).getOrElse("-1")))
+      val selTotals = yearlyRegionPrices.filter(x => sel.contains(p.findFirstIn(x._1).getOrElse("-1")))
 
-    val bot = bottomFive.map(_._1)
-    val top = topFive.map(_._1)
+      selGrowth
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/housing/yearlyGrowth")
+      selTotals
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/housing/yearlyTotals")
+    } else {
 
-    val botYearlyTotals = yearlyRegionPrices.filter(x => bot.contains(x._1))
-    val topYearlyTotals = yearlyRegionPrices.filter(x => top.contains(x._1))
+      val cumulativePriceDiffByRegion = yearlyRegionPrices
+        .map(x =>
+          x._1 -> (((x._2(7) - x._2(0)) / x._2(0).toDouble) * 100))
 
-    val botYearlyGrowth = yearlyRegionGrowth.filter(x => bot.contains(x._1))
-    val topYearlyGrowth = yearlyRegionGrowth.filter(x => top.contains(x._1))
+      val bottomFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].on(_._2))
+      val topFive = cumulativePriceDiffByRegion.takeOrdered(5)(Ordering[Double].reverse.on(_._2))
 
-    spark.sparkContext.parallelize(bottomFive)
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/housing/botFiveCumulative")
-    spark.sparkContext.parallelize(topFive)
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/housing/topFiveCumulative")
-    botYearlyTotals
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/housing/botFiveYearlyTotals")
-    topYearlyTotals
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/housing/topFiveYearlyTotals")
-    botYearlyGrowth
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/housing/botFiveYearlyGrowth")
-    topYearlyGrowth
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/housing/topFiveYearlyGrowth")
+      val bot = bottomFive.map(_._1)
+      val top = topFive.map(_._1)
+
+      val botYearlyTotals = yearlyRegionPrices.filter(x => bot.contains(x._1))
+      val topYearlyTotals = yearlyRegionPrices.filter(x => top.contains(x._1))
+
+      val botYearlyGrowth = yearlyRegionGrowth.filter(x => bot.contains(x._1))
+      val topYearlyGrowth = yearlyRegionGrowth.filter(x => top.contains(x._1))
+
+      spark.sparkContext.parallelize(bottomFive)
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/housing/botFiveCumulative")
+      spark.sparkContext.parallelize(topFive)
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/housing/topFiveCumulative")
+      botYearlyTotals
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/housing/botFiveYearlyTotals")
+      topYearlyTotals
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/housing/topFiveYearlyTotals")
+      botYearlyGrowth
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/housing/botFiveYearlyGrowth")
+      topYearlyGrowth
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/housing/topFiveYearlyGrowth")
+    }
 
   }
 }

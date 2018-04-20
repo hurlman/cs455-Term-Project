@@ -4,7 +4,7 @@ import org.apache.spark.sql._
 import cs455.spark.util.Util._
 
 class PopulationAnalyzer {
-  def Execute(spark: SparkSession, input_path: String, output_path: String): Unit = {
+  def Execute(spark: SparkSession, input_path: String, output_path: String, inputFile: Boolean): Unit = {
     import spark.sqlContext.implicits._
 
     val popFile = spark.read.format("csv")
@@ -46,37 +46,55 @@ class PopulationAnalyzer {
 
     val yearlyPopGrowth = yearlyPop.map(x => x._1 -> CalculateGrowth(x._2))
 
-    val cumulativePopDiff = yearlyPop.map(x => x._1 -> (((x._2(7) - x._2(0)) / x._2(0).toDouble) * 100))
+    if (inputFile) {
+      val sel = spark.sparkContext.textFile(input_path.
+        replace("/population_data","/selective_area.txt")).collect()
 
-    val bottomFive = cumulativePopDiff.takeOrdered(5)(Ordering[Double].on(_._2))
-    val topFive = cumulativePopDiff.takeOrdered(5)(Ordering[Double].reverse.on(_._2))
+      val p = """(?<=\()[^)]+(?=\))""".r
+      val selGrowth = yearlyPopGrowth.filter(x => sel.contains(p.findFirstIn(x._1).getOrElse("-1")))
+      val selTotals = yearlyPop.filter(x => sel.contains(p.findFirstIn(x._1).getOrElse("-1")))
 
-    val bot = bottomFive.map(_._1)
-    val top = topFive.map(_._1)
+      selGrowth
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/population/yearlyGrowth")
+      selTotals
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/population/yearlyTotals")
+    }
+    else {
 
-    val botYearlyTotals = yearlyPop.filter(x => bot.contains(x._1))
-    val topYearlyTotals = yearlyPop.filter(x => top.contains(x._1))
+      val cumulativePopDiff = yearlyPop.map(x => x._1 -> (((x._2(7) - x._2(0)) / x._2(0).toDouble) * 100))
 
-    val botYearlyGrowth = yearlyPopGrowth.filter(x => bot.contains(x._1))
-    val topYearlyGrowth = yearlyPopGrowth.filter(x => top.contains(x._1))
+      val bottomFive = cumulativePopDiff.takeOrdered(5)(Ordering[Double].on(_._2))
+      val topFive = cumulativePopDiff.takeOrdered(5)(Ordering[Double].reverse.on(_._2))
 
-    spark.sparkContext.parallelize(bottomFive)
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/population/botFiveCumulative")
-    spark.sparkContext.parallelize(topFive)
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/population/topFiveCumulative")
-    botYearlyTotals
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/population/botFiveYearlyTotals")
-    topYearlyTotals
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/population/topFiveYearlyTotals")
-    botYearlyGrowth
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/population/botFiveYearlyGrowth")
-    topYearlyGrowth
-      .coalesce(1)
-      .saveAsTextFile(output_path + "/population/topFiveYearlyGrowth")
+      val bot = bottomFive.map(_._1)
+      val top = topFive.map(_._1)
+
+      val botYearlyTotals = yearlyPop.filter(x => bot.contains(x._1))
+      val topYearlyTotals = yearlyPop.filter(x => top.contains(x._1))
+
+      val botYearlyGrowth = yearlyPopGrowth.filter(x => bot.contains(x._1))
+      val topYearlyGrowth = yearlyPopGrowth.filter(x => top.contains(x._1))
+
+      spark.sparkContext.parallelize(bottomFive)
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/population/botFiveCumulative")
+      spark.sparkContext.parallelize(topFive)
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/population/topFiveCumulative")
+      botYearlyTotals
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/population/botFiveYearlyTotals")
+      topYearlyTotals
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/population/topFiveYearlyTotals")
+      botYearlyGrowth
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/population/botFiveYearlyGrowth")
+      topYearlyGrowth
+        .coalesce(1)
+        .saveAsTextFile(output_path + "/population/topFiveYearlyGrowth")
+    }
   }
 }
