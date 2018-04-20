@@ -130,7 +130,7 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
 
         if ( inputFile )
         {
-            val RelevantList=sc.textFile(input_path.replace("/employment_data", "selective_area.txt")).collect();
+            val RelevantList=sc.textFile(input_path.replace("/employment_data", "/selective_area.txt")).collect();
             val specificMetroArea2JobCount = area2sortedyearWiseJobCount.filter(x=> RelevantList.contains(x._1.toString)).join(smAreaCode2Name)
                                                                                     .map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1) )
             specificMetroArea2JobCount.map( xx => (xx._1, xx._2.map( xy => (xy._1, if ( xx._2.indexOf(xy) == 0 ) 0 else ((xy._2 - xx._2.apply(xx._2.indexOf(xy) - 1)._2) * 100) / xx._2.apply(xx._2.indexOf(xy) - 1)._2))))
