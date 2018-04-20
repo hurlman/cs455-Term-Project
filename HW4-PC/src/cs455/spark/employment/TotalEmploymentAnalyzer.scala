@@ -44,7 +44,7 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
    // input_path: Input path of the employment dataset.
    // output_path: Output path of the results
    /////////////////////////////////////////////////////////////////////////////////////////////////
-   def Execute(sc:SparkContext, input_path:String, output_path:String, selective_area_file:String):Unit = 
+   def Execute(sc:SparkContext, input_path:String, output_path:String, inputFile: Boolean):Unit =
    {
         /////////////////////////////////////////////////////////////////////////////////////
         // Get the Area Code 2 Mapping Ready. We will use join instead of manual look up
@@ -128,9 +128,9 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
         // area2sortedyearWiseJobCount: org.apache.spark.rdd.RDD[(Int, List[(Int, Float)])]
         val area2sortedyearWiseJobCount = area2yearWiseJobCountGroupByList.map( xx => (xx._1 , xx._2.sortBy(_._1)));
 
-        if ( selective_area_file != "null" )
+        if ( inputFile )
         {
-            val RelevantList=sc.textFile(selective_area_file).collect();
+            val RelevantList=sc.textFile(input_path.replace("/employment_data", "selective_area.txt")).collect();
             val specificMetroArea2JobCount = area2sortedyearWiseJobCount.filter(x=> RelevantList.contains(x._1.toString)).join(smAreaCode2Name)
                                                                                     .map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1) )
             specificMetroArea2JobCount.map( xx => (xx._1, xx._2.map( xy => (xy._1, if ( xx._2.indexOf(xy) == 0 ) 0 else ((xy._2 - xx._2.apply(xx._2.indexOf(xy) - 1)._2) * 100) / xx._2.apply(xx._2.indexOf(xy) - 1)._2))))
