@@ -12,11 +12,12 @@ object StartUp {
       .master(args(0))
       .appName("hw4-assignment")
       .getOrCreate()
-    val sc = ss.sparkContext
+     val sc = ss.sparkContext
 
-    //println("Word Count program");
-    new TotalEmploymentAnalyzer().Execute(sc, (args(1) + "/employment_data"), args(2))
-    new HousingPriceAnalyzer().Execute(ss, args(1) + "/housing_data", args(2))
-    new PopulationAnalyzer().Execute(ss, args(1) + "/population_data", args(2))
+     //println("Word Count program");
+     new TotalEmploymentAnalyzer().Execute(sc, (args(1) + "/employment_data"), args(2), "null");
+     new TotalEmploymentAnalyzer().Execute(sc, (args(1) + "/employment_data"), args(2), args(1) + "/" + "selective_area.txt");
+     new HousingPriceAnalyzer().Execute(ss, args(1) + "/housing_data", args(2))
+     new PopulationAnalyzer().Execute(ss, args(1) + "/population_data", args(2))
   }
 }
