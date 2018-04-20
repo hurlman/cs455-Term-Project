@@ -1,4 +1,4 @@
-1. Update bash startup script(.bashrc) with the following, if missing.
+/1. Update bash startup script(.bashrc) with the following, if missing.
 	PATH=$PATH:"/usr/local/spark/bin"
 	
 2. Quick check on spark: Launch the shell with spark-shell
