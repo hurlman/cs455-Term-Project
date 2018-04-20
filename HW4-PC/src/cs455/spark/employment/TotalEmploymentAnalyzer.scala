@@ -14,8 +14,11 @@ import java.io._
 class TotalEmploymentAnalyzer() extends java.io.Serializable 
 {
    val NUM_ELEMENT_IN_TOP_OR_BOTTOM = 5;
-   val START_YEAR = 2007;
+   val START_YEAR = 2010;
    val END_YEAR = 2017;
+   //exclude puertorico list.
+   val Exclude_PR_List = List(38660,32420,25020,11640,10380,41980,41900)
+
 
    //Sm area case class 
    case class SmArea(area_code:Int, area:String)
@@ -41,7 +44,7 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
    // input_path: Input path of the employment dataset.
    // output_path: Output path of the results
    /////////////////////////////////////////////////////////////////////////////////////////////////
-   def Execute(sc:SparkContext, input_path:String, output_path:String) 
+   def Execute(sc:SparkContext, input_path:String, output_path:String, selective_area_file:String):Unit = 
    {
         /////////////////////////////////////////////////////////////////////////////////////
         // Get the Area Code 2 Mapping Ready. We will use join instead of manual look up
@@ -71,7 +74,7 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
         val smNonFarmPayrollAreaSeries = smSeriesRDD.filter( ss => ss.industry_code == 0  && ss.supersector_code == 0 && ss.data_type_code == 1 && ss.area_code !=0  && ss.seasonal == "S" )
         // Generate a RDD of series_id(string) , state_code(integer) and area_code(integer) : 
         // smNonFarmPayrollSeries2Area: org.apache.spark.rdd.RDD[String, (Int, Int)]
-        val smNonFarmPayrollSeries2Area=smNonFarmPayrollAreaSeries.map(ss=> (ss.series_id, (ss.state_code, ss.area_code)))
+        val smNonFarmPayrollSeries2Area=smNonFarmPayrollAreaSeries.map(ss=> (ss.series_id, (ss.state_code, ss.area_code))).filter(x => !Exclude_PR_List.contains(x._2._2))
 
 
         /////////////////////////////////////////////////////////////////////////////////////////////////// 
@@ -124,92 +127,111 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
         // Next we will compute cumulative growth. Sort by year first.
         // area2sortedyearWiseJobCount: org.apache.spark.rdd.RDD[(Int, List[(Int, Float)])]
         val area2sortedyearWiseJobCount = area2yearWiseJobCountGroupByList.map( xx => (xx._1 , xx._2.sortBy(_._1)));
-        val area2sortedyearWiseJobCountAndCumulativeGrowth  = area2sortedyearWiseJobCount.map(xx => (xx._1, xx._2, (xx._2.last._2 - xx._2.head._2)*100/xx._2.head._2))
-        val bottomNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeGrowth.sortBy(_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
-        val topNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeGrowth.sortBy(-_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
 
+        if ( selective_area_file != "null" )
+        {
+            val RelevantList=sc.textFile(selective_area_file).collect();
+            val specificMetroArea2JobCount = area2sortedyearWiseJobCount.filter(x=> RelevantList.contains(x._1.toString)).join(smAreaCode2Name)
+                                                                                    .map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1) )
+            specificMetroArea2JobCount.map( xx => (xx._1, xx._2.map( xy => (xy._1, if ( xx._2.indexOf(xy) == 0 ) 0 else ((xy._2 - xx._2.apply(xx._2.indexOf(xy) - 1)._2) * 100) / xx._2.apply(xx._2.indexOf(xy) - 1)._2))))
+                                      .flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
+                                      .coalesce(1).saveAsTextFile(output_path + "/employment/yearly_growth_in_selective_area")
 
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        //                                   Computing final results       
-        //                  1. Cummulative(average) Top N employment locations(metro area).
-        //                  2. Cummulative(average) Bottom N employment locations(metro area).
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        //First found out locations with maximum number of employment.
-        // Extract the area code and total job and make two small new RDDs of [area_code(integer), total_employment(integer)]  to join with area name.
-        // sortedBottomNArea2JobCount: org.apache.spark.rdd.RDD[(Int, Int)],  sortedTopNArea2JobCount: org.apache.spark.rdd.RDD[(Int, Int)]
-        val sortedBottomNArea2JobCount = sc.parallelize(bottomNNonFarmPayrollSeries2AreaAndJobCount.map(xx => (xx._1, xx._3)))
-        val sortedTopNArea2JobCount = sc.parallelize(topNNonFarmPayrollSeries2AreaAndJobCount.map(xx => (xx._1, xx._3)))
+            specificMetroArea2JobCount.map ( xx =>  (xx._1, xx._2.map( xy => (xy._1, ((xy._2 - xx._2.head._2)*100)/xx._2.head._2))))
+                                      .flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
+                                      .coalesce(1).saveAsTextFile(output_path + "/employment/cumulative_growth_in_selective_area")
 
-
-        // Generate two Pair RDDs :  RDDs of [area_code(integer), (total_employment(integer), area_name(string))]  
-        // sortedBottomNAreaName2JobCount: org.apache.spark.rdd.RDD[(Int, (Int, String))], 
-        // sortedTopNAreaName2JobCount: org.apache.spark.rdd.RDD[(Int, (Int, String))]
-        val sortedBottomNAreaName2JobCount=sortedBottomNArea2JobCount.join(smAreaCode2Name).map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1) ).sortBy(_._2)
-        val sortedTopNAreaName2JobCount=sortedTopNArea2JobCount.join(smAreaCode2Name).map(xx => (xx._2._2 + "(" + xx._1 + ")" , xx._2._1) ).sortBy(-_._2)
-
-        //Finally save in text format
-        sortedBottomNAreaName2JobCount.coalesce(1).saveAsTextFile(output_path + "/total_emp/cumulative_bottom_N_area")
-        sortedTopNAreaName2JobCount.coalesce(1).saveAsTextFile(output_path + "/total_emp/cumulative_top_N_area")
-
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        //                                   Computing final results       
-        //                         3. Yearly growth in high employment area.
-        //                         4. Yearly growth in low emplyment area.
-        //              5. Cumulative growth on every year from a reference year in high employment area.
-        //              6. Cumulative growth on every year from a reference year in low employment area.
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        // Create small RDDs for top and bottoms
-        val sortedBottomNNonFarmPayrollSeries2AreaAndJobCount = sc.parallelize(bottomNNonFarmPayrollSeries2AreaAndJobCount.map(xx => (xx._1, xx._2))) ;
-        val sortedTopNNonFarmPayrollSeries2AreaAndJobCount    = sc.parallelize(topNNonFarmPayrollSeries2AreaAndJobCount.map(xx => (xx._1, xx._2)));
-
-        // Let's ensure that the data is sorted uearwise. This has almost no cost due to an RDD of Top/Bottom N elements. 
-        val bottomNArea2JobCount = sortedBottomNNonFarmPayrollSeries2AreaAndJobCount.map( xx => (xx._1, xx._2.sortBy(_._1)))
-        val topNArea2JobCount = sortedTopNNonFarmPayrollSeries2AreaAndJobCount.map( xx => (xx._1, xx._2.sortBy(_._1)))
-
-        val bottomNAreaName2JobCount = bottomNArea2JobCount.join(smAreaCode2Name).map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1)) 
-        val topNAreaName2JobCount = topNArea2JobCount.join(smAreaCode2Name).map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1)) 
-        bottomNAreaName2JobCount.coalesce(1).saveAsTextFile(output_path + "/total_emp/debug/bottomNArea");
-        topNAreaName2JobCount.coalesce(1).saveAsTextFile(output_path + "/total_emp/debug/topNArea");
-
-          
-        // Find yearly growth now for bottom N
-        val bottomNArea2JobYearlyGrowth = bottomNAreaName2JobCount.map ( xx => 
-                                                  (xx._1, xx._2.map( xy =>
-                                                     (xy._1, 
-                                                      if ( xx._2.indexOf(xy) == 0 ) 0
-                                                      else ((xy._2 - xx._2.apply(xx._2.indexOf(xy) - 1)._2) * 100) / xx._2.apply(xx._2.indexOf(xy) - 1)._2)
-                                                     )))
-        val flatBottomNArea2YearlyJobGrowth= bottomNArea2JobYearlyGrowth.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
-        flatBottomNArea2YearlyJobGrowth.coalesce(1).saveAsTextFile(output_path + "/total_emp/yearly_growth_in_low_employment_area");
-
-
-        // Find cumulative growth for bottom N
-        val bottomNArea2JobCummulativeGrowth = bottomNAreaName2JobCount.map ( xx =>
-                                                                          (xx._1, xx._2.map( xy =>
-                                                                          (xy._1, ((xy._2 - xx._2.head._2)*100)/xx._2.head._2))));
-        val flatBottomNArea2CumulativeJobGrowth=bottomNArea2JobCummulativeGrowth.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
-        flatBottomNArea2CumulativeJobGrowth.coalesce(1).saveAsTextFile(output_path + "/total_emp/cumulative_growth_in_low_employment_area");
-
-
-        // Find yearly growth for top N
-        val topNArea2JobYearlyGrowth = topNAreaName2JobCount.map ( xx =>
-                                                  (xx._1, xx._2.map( xy =>
-                                                     (xy._1,
-                                                      if ( xx._2.indexOf(xy) == 0 ) 0
-                                                      else ((xy._2 - xx._2.apply(xx._2.indexOf(xy) - 1)._2) * 100) / xx._2.apply(xx._2.indexOf(xy) - 1)._2)
-                                                     )))
-        val flatTopNArea2YearlyJobGrowth=topNArea2JobYearlyGrowth.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
-        flatTopNArea2YearlyJobGrowth.coalesce(1).saveAsTextFile(output_path + "/total_emp/yearly_growth_in_high_employment_area");
-
-
-        // Find cumulative growth for top N
-        val topNArea2JobCummulativeGrowth = topNAreaName2JobCount.map ( xx =>
-                                                                          (xx._1, xx._2.map( xy =>
-                                                                          (xy._1, ((xy._2 - xx._2.head._2)*100)/xx._2.head._2))));
-        val flatTopNArea2CumulativeJobGrowth=topNArea2JobCummulativeGrowth.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
-        flatTopNArea2CumulativeJobGrowth.coalesce(1).saveAsTextFile(output_path + "/total_emp/cumulative_growth_in_high_employment_area");
-
+            area2sortedyearWiseJobCount.filter(x=> RelevantList.contains(x._1.toString)).join(smAreaCode2Name)
+                                       .coalesce(1).saveAsTextFile(output_path + "/employment/total_in_selective_area")
+        }
+        else
+        {
+            val area2sortedyearWiseJobCountAndCumulativeGrowth  = area2sortedyearWiseJobCount.map(xx => (xx._1, xx._2, (xx._2.last._2 - xx._2.head._2)*100/xx._2.head._2))
+            val bottomNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeGrowth.sortBy(_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
+            val topNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeGrowth.sortBy(-_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
+            
+            
+            ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            //                                   Computing final results       
+            //                  1. Cummulative(average) Top N employment locations(metro area).
+            //                  2. Cummulative(average) Bottom N employment locations(metro area).
+            ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            //First found out locations with maximum number of employment.
+            // Extract the area code and total job and make two small new RDDs of [area_code(integer), total_employment(integer)]  to join with area name.
+            // sortedBottomNArea2JobCount: org.apache.spark.rdd.RDD[(Int, Int)],  sortedTopNArea2JobCount: org.apache.spark.rdd.RDD[(Int, Int)]
+            val sortedBottomNArea2JobCount = sc.parallelize(bottomNNonFarmPayrollSeries2AreaAndJobCount.map(xx => (xx._1, xx._3)))
+            val sortedTopNArea2JobCount = sc.parallelize(topNNonFarmPayrollSeries2AreaAndJobCount.map(xx => (xx._1, xx._3)))
+            
+            
+            // Generate two Pair RDDs :  RDDs of [area_code(integer), (total_employment(integer), area_name(string))]  
+            // sortedBottomNAreaName2JobCount: org.apache.spark.rdd.RDD[(Int, (Int, String))], 
+            // sortedTopNAreaName2JobCount: org.apache.spark.rdd.RDD[(Int, (Int, String))]
+            val sortedBottomNAreaName2JobCount=sortedBottomNArea2JobCount.join(smAreaCode2Name).map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1) ).sortBy(_._2)
+            val sortedTopNAreaName2JobCount=sortedTopNArea2JobCount.join(smAreaCode2Name).map(xx => (xx._2._2 + "(" + xx._1 + ")" , xx._2._1) ).sortBy(-_._2)
+            
+            //Finally save in text format
+            sortedBottomNAreaName2JobCount.coalesce(1).saveAsTextFile(output_path + "/employment/cumulative_bottom_N_area")
+            sortedTopNAreaName2JobCount.coalesce(1).saveAsTextFile(output_path + "/employment/cumulative_top_N_area")
+            
+            ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            //                                   Computing final results       
+            //                         3. Yearly growth in high employment area.
+            //                         4. Yearly growth in low emplyment area.
+            //              5. Cumulative growth on every year from a reference year in high employment area.
+            //              6. Cumulative growth on every year from a reference year in low employment area.
+            ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            
+            // Create small RDDs for top and bottoms
+            val sortedBottomNNonFarmPayrollSeries2AreaAndJobCount = sc.parallelize(bottomNNonFarmPayrollSeries2AreaAndJobCount.map(xx => (xx._1, xx._2))) ;
+            val sortedTopNNonFarmPayrollSeries2AreaAndJobCount    = sc.parallelize(topNNonFarmPayrollSeries2AreaAndJobCount.map(xx => (xx._1, xx._2)));
+            
+            // Let's ensure that the data is sorted uearwise. This has almost no cost due to an RDD of Top/Bottom N elements. 
+            val bottomNArea2JobCount = sortedBottomNNonFarmPayrollSeries2AreaAndJobCount.map( xx => (xx._1, xx._2.sortBy(_._1)))
+            val topNArea2JobCount = sortedTopNNonFarmPayrollSeries2AreaAndJobCount.map( xx => (xx._1, xx._2.sortBy(_._1)))
+            
+            val bottomNAreaName2JobCount = bottomNArea2JobCount.join(smAreaCode2Name).map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1)) 
+            val topNAreaName2JobCount = topNArea2JobCount.join(smAreaCode2Name).map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1)) 
+            bottomNAreaName2JobCount.coalesce(1).saveAsTextFile(output_path + "/employment/debug/bottomNArea");
+            topNAreaName2JobCount.coalesce(1).saveAsTextFile(output_path + "/employment/debug/topNArea");
+            
+              
+            // Find yearly growth now for bottom N
+            val bottomNArea2JobYearlyGrowth = bottomNAreaName2JobCount.map ( xx => 
+                                                      (xx._1, xx._2.map( xy =>
+                                                         (xy._1, 
+                                                          if ( xx._2.indexOf(xy) == 0 ) 0
+                                                          else ((xy._2 - xx._2.apply(xx._2.indexOf(xy) - 1)._2) * 100) / xx._2.apply(xx._2.indexOf(xy) - 1)._2)
+                                                         )))
+            val flatBottomNArea2YearlyJobGrowth= bottomNArea2JobYearlyGrowth.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
+            flatBottomNArea2YearlyJobGrowth.coalesce(1).saveAsTextFile(output_path + "/employment/yearly_growth_in_low_employment_area");
+            
+            
+            // Find cumulative growth for bottom N
+            val bottomNArea2JobCummulativeGrowth = bottomNAreaName2JobCount.map ( xx =>
+                                                                              (xx._1, xx._2.map( xy =>
+                                                                              (xy._1, ((xy._2 - xx._2.head._2)*100)/xx._2.head._2))));
+            val flatBottomNArea2CumulativeJobGrowth=bottomNArea2JobCummulativeGrowth.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
+            flatBottomNArea2CumulativeJobGrowth.coalesce(1).saveAsTextFile(output_path + "/employment/cumulative_growth_in_low_employment_area");
+            
+            
+            // Find yearly growth for top N
+            val topNArea2JobYearlyGrowth = topNAreaName2JobCount.map ( xx =>
+                                                      (xx._1, xx._2.map( xy =>
+                                                         (xy._1,
+                                                          if ( xx._2.indexOf(xy) == 0 ) 0
+                                                          else ((xy._2 - xx._2.apply(xx._2.indexOf(xy) - 1)._2) * 100) / xx._2.apply(xx._2.indexOf(xy) - 1)._2)
+                                                         )))
+            val flatTopNArea2YearlyJobGrowth=topNArea2JobYearlyGrowth.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
+            flatTopNArea2YearlyJobGrowth.coalesce(1).saveAsTextFile(output_path + "/employment/yearly_growth_in_high_employment_area");
+            
+            
+            // Find cumulative growth for top N
+            val topNArea2JobCummulativeGrowth = topNAreaName2JobCount.map ( xx =>
+                                                                              (xx._1, xx._2.map( xy =>
+                                                                              (xy._1, ((xy._2 - xx._2.head._2)*100)/xx._2.head._2))));
+            val flatTopNArea2CumulativeJobGrowth=topNArea2JobCummulativeGrowth.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
+            flatTopNArea2CumulativeJobGrowth.coalesce(1).saveAsTextFile(output_path + "/employment/cumulative_growth_in_high_employment_area");
+        }
    }    
 }
 
