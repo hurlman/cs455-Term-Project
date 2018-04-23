@@ -1,5 +1,7 @@
 package cs455.spark.employment
 import org.apache.spark.SparkContext
+import org.apache.spark.SparkContext
+import cs455.spark.commmon.ConstDefs._
 import java.io._
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -13,25 +15,6 @@ import java.io._
 //////////////////////////////////////////////////////////////////////////////////////
 class TotalEmploymentAnalyzer() extends java.io.Serializable 
 {
-   val NUM_ELEMENT_IN_TOP_OR_BOTTOM = 5;
-   val START_YEAR = 2010;
-   val END_YEAR = 2017;
-   //exclude puertorico list.
-   val Exclude_PR_List = List(38660,32420,25020,11640,10380,41980,41900)
-
-
-   //Sm area case class 
-   case class SmArea(area_code:Int, area:String)
-
-   //Sm Series case class 
-   case class SmSeries(series_id: String, state_code: Int, area_code: Int, 
-                       supersector_code: Int, industry_code: Int, data_type_code: Int, 
-                       seasonal: String, benchmark_year: Int, footnote_codes: String, 
-                       begin_year: Int, begin_period: String, end_year: Int, end_period: String);
-
-   //Sm Data case class 
-   case class SmDataSeries(series_id: String, year: Int, period:String, value:Int, footnode_codes:String)
-
    //////////////////////////////////////////////////////////////////////////////////////////  
    // 1. Cummulative(average) Top N employment locations(metro area).
    // 2. Cummulative(average) Bottom N employment locations(metro area).
@@ -134,11 +117,11 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
             val specificMetroArea2JobCount = area2sortedyearWiseJobCount.filter(x=> RelevantList.contains(x._1.toString)).join(smAreaCode2Name)
                                                                                     .map(xx => ( xx._2._2 + "(" + xx._1 + ")", xx._2._1) )
             specificMetroArea2JobCount.map( xx => (xx._1, xx._2.map( xy => (xy._1, if ( xx._2.indexOf(xy) == 0 ) 0 else ((xy._2 - xx._2.apply(xx._2.indexOf(xy) - 1)._2) * 100) / xx._2.apply(xx._2.indexOf(xy) - 1)._2))))
-                                      .flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
+                                      //.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
                                       .coalesce(1).saveAsTextFile(output_path + "/employment/yearly_growth_in_selective_area")
 
             specificMetroArea2JobCount.map ( xx =>  (xx._1, xx._2.map( xy => (xy._1, ((xy._2 - xx._2.head._2)*100)/xx._2.head._2))))
-                                      .flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
+                                      //.flatMapValues(xx=>xx).map(xx=> (xx._2._1, (xx._1, xx._2._2)) ).groupByKey().sortByKey()
                                       .coalesce(1).saveAsTextFile(output_path + "/employment/cumulative_growth_in_selective_area")
 
             area2sortedyearWiseJobCount.filter(x=> RelevantList.contains(x._1.toString)).join(smAreaCode2Name)
@@ -146,6 +129,8 @@ class TotalEmploymentAnalyzer() extends java.io.Serializable
         }
         else
         {
+            area2sortedyearWiseJobCount.map(xx=> (xx._1, xx._2.map(yy => yy._2))).coalesce(1).saveAsTextFile(output_path + TOTAL_EMPLOYMENT_STAT_OUTPUT_DIR_NAME)
+
             val area2sortedyearWiseJobCountAndCumulativeGrowth  = area2sortedyearWiseJobCount.map(xx => (xx._1, xx._2, (xx._2.last._2 - xx._2.head._2)*100/xx._2.head._2))
             val bottomNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeGrowth.sortBy(_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
             val topNNonFarmPayrollSeries2AreaAndJobCount = area2sortedyearWiseJobCountAndCumulativeGrowth.sortBy(-_._3).take(NUM_ELEMENT_IN_TOP_OR_BOTTOM)
