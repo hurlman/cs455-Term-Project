@@ -107,7 +107,8 @@ class HousingPriceAnalyzer extends java.io.Serializable {
         .saveAsTextFile(output_path + "/housing/yearlyTotals")
       selDiff
         .coalesce(1)
-        .saveAsTextFile(output_path + "/housing/yearlyTotals")
+        .sortBy(_._2)
+        .saveAsTextFile(output_path + "/housing/cumulativeDiff")
     } else {
 
       //Or get only the top and bottom 5 cities with the largest cumulative change

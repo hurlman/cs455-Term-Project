@@ -81,6 +81,7 @@ class PopulationAnalyzer {
         .saveAsTextFile(output_path + "/population/yearlyTotals")
       selDiff
         .coalesce(1)
+        .sortBy(_._2)
         .saveAsTextFile(output_path + "/population/cumulativeDiff")
     }
     else {
